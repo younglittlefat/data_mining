@@ -303,6 +303,7 @@ class FinancialReport:
             return -1
         #res = self._request_url(true_url, timeout = 1)
         soup = BeautifulSoup(self.d.page_source, "html.parser")
+        print soup.prettify()
 
         # 解析表格的左栏
         row_name_list = self._decode_left_head(soup)
@@ -337,7 +338,7 @@ class FinancialReport:
 
         """
 
-        is_debug = False
+        is_debug = True
         logging.info("Now getting financial report")
 
         if is_debug:
