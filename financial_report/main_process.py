@@ -168,6 +168,8 @@ class FinancialReport:
                     num = float(ele.strip(u"%"))/100.0
                 elif ele.endswith(u"万"):
                     num = float(ele.strip(u"万"))*10000
+                elif ele.endswith(u"万亿"):
+                    num = float(ele.strip(u"万亿"))*1000000000000
                 elif ele.endswith(u"亿"):
                     num = float(ele.strip(u"亿"))*100000000
                 elif ele == u"--":
@@ -303,7 +305,7 @@ class FinancialReport:
             return -1
         #res = self._request_url(true_url, timeout = 1)
         soup = BeautifulSoup(self.d.page_source, "html.parser")
-        print soup.prettify()
+        #print soup.prettify()
 
         # 解析表格的左栏
         row_name_list = self._decode_left_head(soup)
@@ -338,7 +340,7 @@ class FinancialReport:
 
         """
 
-        is_debug = True
+        is_debug = False
         logging.info("Now getting financial report")
 
         if is_debug:
