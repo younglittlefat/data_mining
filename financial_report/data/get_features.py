@@ -37,15 +37,25 @@ class FeatureSelector:
         for idx in range(len(raw_info)-1):
             date_before = raw_info[idx][0]
             date_after = raw_info[idx+1][0]
-            diff_days = self._get_diff_days(date_before, date_after)
+            try:
+                diff_days = self._get_diff_days(date_before, date_after)
+            except:
+                begin_day = int(raw_info[idx+1][0])
+                end_day = -1
+                continue
+                
             if diff_days < 100:
                 end_day = int(raw_info[idx+1][0])
             else:
                 begin_day = int(raw_info[idx+1][0])
                 end_day = -1
 
-        return begin_day, end_day
-        
+        date_list = []
+        for date, _ in raw_info:
+            if int(date) >= begin_day and int(date) <= end_day:
+                date_list.append(int(date))
+
+        return date_list
 
 
     def process_one_report(self, report_path):
@@ -57,7 +67,11 @@ class FeatureSelector:
         raw_info = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
         #print json.dumps(raw_info, ensure_ascii = False, indent = 1)
 
-        print self._get_longest_consecutive_period(raw_info)
+        # 获取最长连续年报周期内的所有年报日期
+        report_date_list = self._get_longest_consecutive_period(raw_info)
+
+        for date in report_date_list[-4:]:
+            print date
 
 
     def main(self):
