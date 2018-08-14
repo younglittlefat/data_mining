@@ -8,7 +8,8 @@ from lxml import etree
 
 class Download_HistoryStock(object):
 
-    def __init__(self, code):
+    def __init__(self, output_path, code):
+        self.output_path = output_path
         self.code = code
         self.start_url = "http://quotes.money.163.com/trade/lsjysj_" + self.code + ".html"
         print self.start_url
@@ -32,22 +33,22 @@ class Download_HistoryStock(object):
     
     def download(self, start_date, end_date):
         first_number = "0"
-        if self.code.startsWith("0"):
+        if self.code.startswith("0") or self.code.startswith("3"):
             first_number = "1"
 
-        download_url = 
-            "http://quotes.money.163.com/service/chddata.html?code=" 
-            + first_number
-            + self.code
-            + "&start="
-            + start_date
-            + "&end="
-            + end_date
+        download_url = \
+            "http://quotes.money.163.com/service/chddata.html?code=" \
+            + first_number \
+            + self.code \
+            + "&start=" \
+            + start_date \
+            + "&end=" \
+            + end_date \
             + "&fields=TCLOSE;HIGH;LOW;TOPEN;LCLOSE;CHG;PCHG;TURNOVER;VOTURNOVER;VATURNOVER;TCAP;MCAP"
 
         data = requests.get(download_url)
         print download_url
-        f = open(self.code + '.csv', 'wb')
+        f = open(os.path.join(self.output_path, self.code) + '.csv', 'wb')
     
         for chunk in data.iter_content(chunk_size=10000):
             if chunk:
@@ -64,6 +65,7 @@ class Download_HistoryStock(object):
 
 
 if __name__ == "__main__":
-    download = Download_HistoryStock("000423")
+    output_path = "./"
+    download = Download_HistoryStock(output_path, "000423")
     download.run()
     
