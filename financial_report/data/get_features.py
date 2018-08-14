@@ -11,8 +11,29 @@ sys.setdefaultencoding("utf-8")
 
 class FeatureSelector:
 
-    def __init__(self, reports_dir):
+    def __init__(self, reports_dir, feature_conf, feature_output):
         self.reports_dir = reports_dir
+        self.feature_conf = feature_conf
+        self.feature_output = feature_output
+        self.f_out = open(self.feature_output, "w")
+        # read feature conf
+        self._read_feature_conf()
+
+
+    def _read_feature_conf(self):
+        """
+
+        """
+        self.feature_mapping = {}
+        with codecs.open(self.feature_conf, "r", "utf-8", "ignore") as f:
+            for line in f:
+                name, idx = line.strip().split(" ")
+                self.feature_mapping[name] = int(idx)
+
+        print ""
+        print json.dumps(sorted(self.feature_mapping.iteritems(),
+            key = lambda x:x[1]), ensure_ascii = False)
+        print ""
 
 
     def _get_diff_days(self, date1, date2):
@@ -28,6 +49,21 @@ class FeatureSelector:
         return (after-before).days
 
 
+    def _check_one_report_integrity(self, info_dict):
+        """
+
+        """
+        incomplete_num = 0
+        for key in info_dict:
+            if info_dict[key] == None:
+                incomplete_num += 1
+
+        if incomplete_num > 2:
+            return False
+        else:
+            return True
+
+
     def _get_longest_consecutive_period(self, raw_info):
         """
 
@@ -37,6 +73,10 @@ class FeatureSelector:
         for idx in range(len(raw_info)-1):
             date_before = raw_info[idx][0]
             date_after = raw_info[idx+1][0]
+            if not self._check_one_report_integrity(raw_info[idx][1]):
+                begin_day = int(raw_info[idx+1][0])
+                end_day = -1
+                continue
             try:
                 diff_days = self._get_diff_days(date_before, date_after)
             except:
@@ -58,20 +98,37 @@ class FeatureSelector:
         return date_list
 
 
-    def process_one_report(self, report_path):
+    def process_one_company(self, report_path):
         """
         decode one report
         """
+        print_feature = False
         with codecs.open(report_path, "r", "utf-8", "ignore") as f:
             raw_info = json.load(f)
-        raw_info = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
+        raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
         #print json.dumps(raw_info, ensure_ascii = False, indent = 1)
 
         # 获取最长连续年报周期内的所有年报日期
-        report_date_list = self._get_longest_consecutive_period(raw_info)
+        report_date_list = self._get_longest_consecutive_period(raw_info_list)
+        if len(report_date_list) < 4:
+            print "Report is incomplete! %s" % report_path
+            return
 
-        for date in report_date_list[-4:]:
-            print date
+        feature_list = [None for i in range(4*len(self.feature_mapping))]
+        #print feature_list
+        for idx, date in enumerate(report_date_list[-4:]):
+            for feat_name in self.feature_mapping:
+                if feat_name in raw_info[str(date)]:
+                    if print_feature:
+                        print "date=%s, feat=%s, value=%s" % \
+                            (date, feat_name, raw_info[str(date)][feat_name])
+                    feat_idx = idx*len(self.feature_mapping) + self.feature_mapping[feat_name]
+                    feat_value = raw_info[str(date)][feat_name]
+                    feature_list[feat_idx] = feat_value
+
+        if print_feature:
+            print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
+        self.f_out.write(report_path.split("/")[-1] + " " + " ".join(map(str, feature_list)) + "\n")
 
 
     def main(self):
@@ -83,10 +140,14 @@ class FeatureSelector:
 
         for report_path in reports_path:
             print "Now processing %s" % report_path
-            self.process_one_report(report_path)
+            self.process_one_company(report_path)
+
+        self.f_out.close()
 
 
 if __name__ == "__main__":
     reports_dir = sys.argv[1]
-    fs = FeatureSelector(reports_dir)
+    conf_path = sys.argv[2]
+    feature_output = sys.argv[3]
+    fs = FeatureSelector(reports_dir, conf_path, feature_output)
     fs.main()
