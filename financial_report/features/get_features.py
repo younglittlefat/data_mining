@@ -3,7 +3,9 @@ import sys
 import os
 import json
 import codecs
+import csv
 from datetime import datetime
+from datetime import timedelta
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -11,9 +13,10 @@ sys.setdefaultencoding("utf-8")
 
 class FeatureSelector:
 
-    def __init__(self, reports_dir, feature_conf, feature_output):
+    def __init__(self, reports_dir, feature_conf, stock_price_dir, feature_output):
         self.reports_dir = reports_dir
         self.feature_conf = feature_conf
+        self.stock_price_dir = stock_price_dir
         self.feature_output = feature_output
         self.f_out = open(self.feature_output, "w")
         # read feature conf
@@ -98,6 +101,48 @@ class FeatureSelector:
         return date_list
 
 
+    def _get_stock_price_change(self, stock_id, begin_date, end_date):
+        """
+        获取某公司特定时间段的股票涨跌幅
+        """
+        # 股价区间均推迟1个月
+        before = datetime(begin_date/10000, (begin_date-begin_date/10000*10000)/100,
+            begin_date-begin_date/100*100)
+        after = datetime(end_date/10000, (end_date-end_date/10000*10000)/100,
+            end_date-end_date/100*100)
+
+        file_path = os.path.join(self.stock_price_dir, stock_id + ".csv")
+        f = open(file_path, "rb")
+        info_list = list(csv.reader(f))[1:]
+        date_price_dict = {l[0].encode("utf-8"):float(l[3]) for l in info_list}
+        #print json.dumps(map(lambda x:x.decode("gbk"), info_list[0]), ensure_ascii = False)
+
+        # 找到开盘的一天
+        for i in range(8):
+            days_interval = timedelta(days = 30+i)
+            delay_before = (before + days_interval).strftime("%Y-%m-%d")
+            if delay_before in date_price_dict:
+                break
+        for i in range(8):
+            days_interval = timedelta(days = 30+i)
+            delay_after = (after + days_interval).strftime("%Y-%m-%d")
+            if delay_after in date_price_dict:
+                break
+
+        # 
+        if delay_before not in date_price_dict:
+            return None
+        # 获取当天股价
+        begin_price = date_price_dict[delay_before]
+        end_price = date_price_dict[delay_after]
+        print delay_before, begin_price
+        print delay_after, end_price
+        if str(begin_price) == "0.0" or str(end_price) == "0.0":
+            return None
+        return end_price/begin_price - 1
+
+
+
     def process_one_company(self, report_path):
         """
         decode one report
@@ -114,8 +159,7 @@ class FeatureSelector:
             print "Report is incomplete! %s" % report_path
             return
 
-        feature_list = [None for i in range(4*len(self.feature_mapping))]
-        #print feature_list
+        feature_list = [None for i in range(4*len(self.feature_mapping) + 1)]
         for idx, date in enumerate(report_date_list[-4:]):
             for feat_name in self.feature_mapping:
                 if feat_name in raw_info[str(date)]:
@@ -126,9 +170,43 @@ class FeatureSelector:
                     feat_value = raw_info[str(date)][feat_name]
                     feature_list[feat_idx] = feat_value
 
+        # 获取对应时间段的股价涨跌幅
+        stock_id = report_path.split("/")[-1].split("_")[0]
+        price_change = self._get_stock_price_change(stock_id, report_date_list[-4:][0], report_date_list[-4:][-1])
+        if not price_change:
+            return
+        feature_list[-1] = price_change
+
+
         if print_feature:
             print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
         self.f_out.write(report_path.split("/")[-1] + " " + " ".join(map(str, feature_list)) + "\n")
+
+
+    def get_valid_stock_id(self):
+        """
+        获取至少有4个完整年报周期的公司股票id及名称
+        """
+        valid_stock_id_path = "valid_stock_id_china"
+        reports_path = map(lambda x:os.path.join(self.reports_dir, x), 
+            os.listdir(self.reports_dir))
+
+        f_out = open(valid_stock_id_path, "w")
+        for report_path in reports_path:
+            print "Now processing %s" % report_path
+            with codecs.open(report_path, "r", "utf-8", "ignore") as f:
+                raw_info = json.load(f)
+            raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
+    
+            # 获取最长连续年报周期内的所有年报日期
+            report_date_list = self._get_longest_consecutive_period(raw_info_list)
+            if len(report_date_list) < 4:
+                print "Report is incomplete! %s" % report_path
+                continue
+            f_out.write(report_path.split("/")[-1] + "\n")
+
+        f_out.close()
+
 
 
     def main(self):
@@ -148,6 +226,8 @@ class FeatureSelector:
 if __name__ == "__main__":
     reports_dir = sys.argv[1]
     conf_path = sys.argv[2]
-    feature_output = sys.argv[3]
-    fs = FeatureSelector(reports_dir, conf_path, feature_output)
+    stock_price_dir = sys.argv[3]
+    feature_output = sys.argv[4]
+    fs = FeatureSelector(reports_dir, conf_path, stock_price_dir, feature_output)
+    #fs.get_valid_stock_id()
     fs.main()
