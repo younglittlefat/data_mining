@@ -27,8 +27,9 @@ def download_history_stock_price():
 
 
 if __name__ == "__main__":
-    data_path = "./american_data"
-    config_path = "./config/american_config.json"
-    #a_shares = ASharesFinanceReportDigger()
+    #data_path = "./american_data"
+    data_path = "./china_data"
+    config_path = "./config/main_config.json"
+    a_shares = ASharesFinanceReportDigger()
     #amer = AmericanSharesFinanceReportDigger(data_path, config_path)
-    download_history_stock_price()
+    #download_history_stock_price()
