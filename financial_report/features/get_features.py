@@ -130,7 +130,7 @@ class FeatureSelector:
                 break
 
         # 
-        if delay_before not in date_price_dict:
+        if delay_before not in date_price_dict or delay_after not in date_price_dict:
             return None
         # 获取当天股价
         begin_price = date_price_dict[delay_before]
@@ -143,22 +143,11 @@ class FeatureSelector:
 
 
 
-    def process_one_company(self, report_path):
+    def period_is_year(self, report_date_list, raw_info, raw_info_list, report_path):
         """
-        decode one report
+        观察期为1年
         """
         print_feature = False
-        with codecs.open(report_path, "r", "utf-8", "ignore") as f:
-            raw_info = json.load(f)
-        raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
-        #print json.dumps(raw_info, ensure_ascii = False, indent = 1)
-
-        # 获取最长连续年报周期内的所有年报日期
-        report_date_list = self._get_longest_consecutive_period(raw_info_list)
-        if len(report_date_list) < 4:
-            print "Report is incomplete! %s" % report_path
-            return
-
         feature_list = [None for i in range(4*len(self.feature_mapping) + 1)]
         for idx, date in enumerate(report_date_list[-4:]):
             for feat_name in self.feature_mapping:
@@ -174,13 +163,67 @@ class FeatureSelector:
         stock_id = report_path.split("/")[-1].split("_")[0]
         price_change = self._get_stock_price_change(stock_id, report_date_list[-4:][0], report_date_list[-4:][-1])
         if not price_change:
-            return
+            return None
         feature_list[-1] = price_change
-
 
         if print_feature:
             print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
         self.f_out.write(report_path.split("/")[-1] + " " + " ".join(map(str, feature_list)) + "\n")
+
+
+    def period_is_quarter(self, report_date_list, raw_info, raw_info_list, report_path):
+        """
+        观察期为一个季度
+        """
+        print_feature = False
+        for idx, date in enumerate(report_date_list[4:-1]):
+            feature_list = [None for i in range(len(self.feature_mapping) + 1)]
+            for feat_name in self.feature_mapping:
+                if feat_name in raw_info[str(date)]:
+                    if print_feature:
+                        print "date=%s, feat=%s, value=%s" % \
+                            (date, feat_name, raw_info[str(date)][feat_name])
+                    feat_idx = self.feature_mapping[feat_name] 
+                    feat_value = raw_info[str(date)][feat_name]
+                    feature_list[feat_idx] = feat_value
+
+            # 获取对应时间段的股价涨跌幅
+            stock_id = report_path.split("/")[-1].split("_")[0]
+            price_change = self._get_stock_price_change(stock_id, report_date_list[idx], report_date_list[idx+1])
+            if not price_change:
+                print "No price change!"
+                continue
+            feature_list[-1] = price_change
+    
+            if print_feature:
+                print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
+            self.f_out.write(report_path.split("/")[-1] + " " + \
+                str(report_date_list[idx]) + " " + str(report_date_list[idx+1]) + " " + \
+                " ".join(map(str, feature_list)) + "\n")
+
+
+
+
+    def process_one_company(self, report_path):
+        """
+        decode one report
+        """
+        print_feature = False
+        with codecs.open(report_path, "r", "utf-8", "ignore") as f:
+            raw_info = json.load(f)
+        raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
+        #print json.dumps(raw_info, ensure_ascii = False, indent = 1)
+
+        # 获取最长连续年报周期内的所有年报日期
+        report_date_list = self._get_longest_consecutive_period(raw_info_list)
+        print report_date_list
+        if len(report_date_list) < 5:
+            print "Report is incomplete! %s" % report_path
+            return
+
+        #self.period_is_year(report_date_list, raw_info, raw_info_list, report_path)
+        self.period_is_quarter(report_date_list, raw_info, raw_info_list, report_path)
+
 
 
     def get_valid_stock_id(self):
