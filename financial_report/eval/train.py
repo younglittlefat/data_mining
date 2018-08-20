@@ -3,10 +3,12 @@ import sys
 import os
 import codecs
 import random
+import pickle
 
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn import metrics
+from sklearn.preprocessing import MinMaxScaler
 
 class TrainProcess:
 
@@ -51,19 +53,22 @@ class TrainProcess:
         """
         对数据做归一化
         """
-        self.raw_data_list = self._label_normalization(self.raw_data_list)
+        #self.raw_data_list = self._label_normalization(self.raw_data_list)
+        scaler = MinMaxScaler()
+        self.raw_data_list = scaler.fit_transform(self.raw_data_list)
+        with open("scaler", "wb") as f:
+            pickle.dump(scaler, f)
 
 
 
-
-    def main(self):
+    def train(self):
         """
 
         """
         self.normalization()
 
-        #model = GradientBoostingRegressor(verbose = 1, max_depth = 5, n_estimators = 200, loss = "lad")
-        model = RandomForestRegressor(verbose = 1, n_estimators = 150)
+        #model = GradientBoostingRegressor(verbose = 1, max_depth = 10, n_estimators = 200, loss = "lad")
+        model = RandomForestRegressor(verbose = 1, n_estimators = 300, n_jobs = -1)
         #model = MLPRegressor(verbose = True, hidden_layer_sizes = (30, 15))
 
         # data process
@@ -77,15 +82,35 @@ class TrainProcess:
         train_label = map(lambda x:x[-1], train_set)
         test_feat = map(lambda x:x[:-1], test_set)
         test_label = map(lambda x:x[-1], test_set)
+        all_feat = map(lambda x:x[:-1], self.raw_data_list)
+        all_label = map(lambda x:x[-1], self.raw_data_list)
+
 
         # training
-        model.fit(train_feat, train_label)
+        #model.fit(train_feat, train_label)
+        model.fit(all_feat, all_label)
         print model.score(test_feat, test_label)
 
+        with open("model", "wb") as f:
+            pickle.dump(model, f)
 
+
+    def eval(self):
+        model_path = sys.argv[2]
+        scaler_path = sys.argv[3]
+        with open(model_path, "rb") as f:
+            model = pickle.load(f)
+        with open(scaler_path, "rb") as f:
+            scaler = pickle.load(f)
+        
+        self.raw_data_list = scaler.transform(self.raw_data_list)
+        feat = map(lambda x:x[:-1], self.raw_data_list)
+        label = map(lambda x:x[-1], self.raw_data_list)
+        print model.score(feat, label)
 
 
 if __name__ == "__main__":
     data_path = sys.argv[1]
     tp = TrainProcess(data_path)
-    tp.main()
+    #tp.train()
+    tp.eval()

@@ -114,32 +114,46 @@ class FeatureSelector:
         file_path = os.path.join(self.stock_price_dir, stock_id + ".csv")
         f = open(file_path, "rb")
         info_list = list(csv.reader(f))[1:]
-        date_price_dict = {l[0].encode("utf-8"):float(l[3]) for l in info_list}
+        self.date_price_dict = {l[0].encode("utf-8"):[float(l[3]), float(l[-2])] for l in info_list}
         #print json.dumps(map(lambda x:x.decode("gbk"), info_list[0]), ensure_ascii = False)
 
         # 找到开盘的一天
         for i in range(8):
             days_interval = timedelta(days = 30+i)
             delay_before = (before + days_interval).strftime("%Y-%m-%d")
-            if delay_before in date_price_dict:
+            if delay_before in self.date_price_dict:
                 break
         for i in range(8):
             days_interval = timedelta(days = 30+i)
             delay_after = (after + days_interval).strftime("%Y-%m-%d")
-            if delay_after in date_price_dict:
+            if delay_after in self.date_price_dict:
+                break
+        for i in range(8):
+            days_interval = timedelta(days = i)
+            valid_begin_date = (before + days_interval).strftime("%Y-%m-%d")
+            if valid_begin_date in self.date_price_dict:
                 break
 
         # 
-        if delay_before not in date_price_dict or delay_after not in date_price_dict:
-            return None
+        if delay_before not in self.date_price_dict or \
+            delay_after not in self.date_price_dict or \
+            valid_begin_date not in self.date_price_dict:
+            return None, None
+
         # 获取当天股价
-        begin_price = date_price_dict[delay_before]
-        end_price = date_price_dict[delay_after]
-        print delay_before, begin_price
-        print delay_after, end_price
+        begin_price = self.date_price_dict[delay_before][0]
+        end_price = self.date_price_dict[delay_after][0]
+        #print delay_before, begin_price
+        #print delay_after, end_price
         if str(begin_price) == "0.0" or str(end_price) == "0.0":
-            return None
-        return end_price/begin_price - 1
+            return None, None
+
+        # 获取总市值
+        company_price = self.date_price_dict[valid_begin_date][1]
+        if str(company_price) == "0.0":
+            return None, None
+
+        return end_price/begin_price - 1, company_price
 
 
 
@@ -161,7 +175,7 @@ class FeatureSelector:
 
         # 获取对应时间段的股价涨跌幅
         stock_id = report_path.split("/")[-1].split("_")[0]
-        price_change = self._get_stock_price_change(stock_id, report_date_list[-4:][0], report_date_list[-4:][-1])
+        price_change, company_price = self._get_stock_price_change(stock_id, report_date_list[-4:][0], report_date_list[-4:][-1])
         if not price_change:
             return None
         feature_list[-1] = price_change
@@ -177,7 +191,7 @@ class FeatureSelector:
         """
         print_feature = False
         for idx, date in enumerate(report_date_list[4:-1]):
-            feature_list = [None for i in range(len(self.feature_mapping) + 1)]
+            feature_list = [None for i in range(len(self.feature_mapping) + 2)]
             for feat_name in self.feature_mapping:
                 if feat_name in raw_info[str(date)]:
                     if print_feature:
@@ -189,11 +203,15 @@ class FeatureSelector:
 
             # 获取对应时间段的股价涨跌幅
             stock_id = report_path.split("/")[-1].split("_")[0]
-            price_change = self._get_stock_price_change(stock_id, report_date_list[idx], report_date_list[idx+1])
+            price_change, company_price= self._get_stock_price_change(stock_id, report_date_list[idx], report_date_list[idx+1])
             if not price_change:
                 print "No price change!"
                 continue
+            if not company_price:
+                print "No company price!"
+                continue
             feature_list[-1] = price_change
+            feature_list[-2] = company_price
     
             if print_feature:
                 print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
@@ -261,6 +279,9 @@ class FeatureSelector:
 
         for report_path in reports_path:
             print "Now processing %s" % report_path
+            if u"ST" in report_path:
+                print "Filter ST company!"
+                continue
             self.process_one_company(report_path)
 
         self.f_out.close()

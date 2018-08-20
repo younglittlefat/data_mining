@@ -146,6 +146,8 @@ class ASharesFinanceReportDigger:
                 continue
             if u"ETF" in stock_name:
                 continue
+            if u"ST" in stock_name:
+                continue
             self.id_stockname_mapping[stock_id] = stock_name
             f_w.write("%s\t%s\n" % (stock_name, stock_id))
         f_w.close()
