@@ -25,7 +25,7 @@ logging.getLogger("connectionpool").setLevel(logging.WARNING)
 class ASharesFinanceReportDigger:
 
 
-    def __init__(self, data_path, config_path):
+    def __init__(self, data_path, config_path, mapping_file_path = None):
         self.root_url = None
         self.user_agent = None
         self.host = None
@@ -36,6 +36,7 @@ class ASharesFinanceReportDigger:
 
         self.data_path = data_path
         self.config_path = config_path
+        self.mapping_file_path = mapping_file_path
 
         # 创建当天财报目录
         if not os.path.exists(os.path.join(self.data_path, self.now_month)):
@@ -48,6 +49,7 @@ class ASharesFinanceReportDigger:
         self.d.set_script_timeout(5)
 
         self.load_config()
+        self.load_stock_id_mapping()
     
 
     def load_config(self):
@@ -65,6 +67,17 @@ class ASharesFinanceReportDigger:
         if self.user_agent and self.host:
             self.headers["User-Agent"] = self.user_agent
             #self.headers["Host"] = self.host
+
+
+    def load_stock_id_mapping(self):
+        """
+
+        """
+        if not self.mapping_file_path:
+            return
+
+        with codecs.open(self.mapping_file_path, "r", "utf-8", "ignore") as f:
+            self.id_stockname_mapping = {temp[1]:temp[0] for temp in map(lambda x:x.strip().split("\t"), f.readlines())}
 
 
     def _request_url(self, url, timeout = 5):
@@ -319,6 +332,12 @@ class ASharesFinanceReportDigger:
         if len(finance_data_dict) == 0:
             return -1
 
+
+        # 点击进入资产负债表
+        self.d.find_element_by_class_name("icons_page").click()
+
+
+
         # 拼装表头和数据
         final_finance_dict = OrderedDict()
         for key in finance_data_dict:
@@ -327,11 +346,12 @@ class ASharesFinanceReportDigger:
             for idx, row_name in enumerate(row_name_list):
                 new_dict[row_name] = data_list[idx]
             final_finance_dict[key] = new_dict
+        """
         file_path = os.path.join(self.data_path, "%s_%s" % (stock_id, stock_name))
         with open(file_path, "w") as f:
             output_str = json.dumps(final_finance_dict, ensure_ascii = False, indent = 2)
             f.write(output_str)
-
+        """
         return 0
 
 
@@ -341,7 +361,7 @@ class ASharesFinanceReportDigger:
 
         """
 
-        is_debug = False
+        is_debug = True
         logging.info("Now getting financial report")
 
         if is_debug:
@@ -376,4 +396,8 @@ class ASharesFinanceReportDigger:
 
 
 if __name__ == "__main__":
-    pass
+    data_path = sys.argv[1]
+    config_path = sys.argv[2]
+    mapping_file = sys.argv[3]
+    a = ASharesFinanceReportDigger(data_path, config_path, mapping_file)
+    a.get_financial_report()
