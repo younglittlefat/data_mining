@@ -37,6 +37,7 @@ class ASharesFinanceReportDigger:
         self.data_path = data_path
         self.config_path = config_path
         self.mapping_file_path = mapping_file_path
+        self.blacklist = "../config/china_shares_blacklist"
 
         # 创建当天财报目录
         if not os.path.exists(os.path.join(self.data_path, self.now_month)):
@@ -76,8 +77,16 @@ class ASharesFinanceReportDigger:
         if not self.mapping_file_path:
             return
 
+        with codecs.open(self.blacklist, "r", "utf-8", "ignore") as f:
+            blacklist_dict = {line.strip().split("_")[0] for line in f.readlines()}
+
+        self.id_stockname_mapping = {}
         with codecs.open(self.mapping_file_path, "r", "utf-8", "ignore") as f:
-            self.id_stockname_mapping = {temp[1]:temp[0] for temp in map(lambda x:x.strip().split("\t"), f.readlines())}
+            for line in f:
+                temp = line.strip().split("\t")
+                if temp[1] in blacklist_dict:
+                    continue
+                self.id_stockname_mapping[temp[1]] = temp[0]
 
 
     def _request_url(self, url, timeout = 5):
@@ -298,7 +307,9 @@ class ASharesFinanceReportDigger:
 
         for idx, date in enumerate(date_list):
             now_date_info = info_list[idx]
-            result[date] = self._finance_info_preprocess(now_date_info)
+            if date not in result:
+                result[date] = []
+            result[date] += self._finance_info_preprocess(now_date_info)
 
         #print json.dumps(result, ensure_ascii = False, indent = 2)
         return result
@@ -321,43 +332,52 @@ class ASharesFinanceReportDigger:
         #print soup.prettify()
 
         # 解析表格的左栏
-        row_name_list = self._decode_left_head(soup)
-        if len(row_name_list) == 0:
+        row_name_list_main = self._decode_left_head(soup)
+        if len(row_name_list_main) == 0:
             return -1
         #print json.dumps(row_name_list, ensure_ascii = False, indent = 2)
 
         # 解析表格数据
         finance_data_dict = OrderedDict()
-        finance_data_dict = self._decode_table_data(soup, row_name_list, finance_data_dict)
+        finance_data_dict = self._decode_table_data(soup, row_name_list_main, finance_data_dict)
         if len(finance_data_dict) == 0:
             return -1
 
 
         # 点击进入资产负债表
         self.d.find_element_by_class_name("icons_page").click()
-        time.sleep(5)
+        time.sleep(3)
         soup = BeautifulSoup(self.d.page_source, "html.parser")
         # 解析表格的左栏
-        row_name_list = self._decode_left_head(soup)
-        if len(row_name_list) == 0:
+        row_name_list_dept = self._decode_left_head(soup)
+        if len(row_name_list_dept) == 0:
             return -1
-        print json.dumps(row_name_list, ensure_ascii = False, indent = 2)
+        finance_data_dict = self._decode_table_data(soup, row_name_list_dept, finance_data_dict)
+
+        # 点击进入利润表
+        self.d.find_element_by_class_name("icons_pie").click()
+        time.sleep(3)
+        soup = BeautifulSoup(self.d.page_source, "html.parser")
+        # 解析表格的左栏
+        row_name_list_profit = self._decode_left_head(soup)
+        if len(row_name_list_profit) == 0:
+            return -1
+        finance_data_dict = self._decode_table_data(soup, row_name_list_profit, finance_data_dict)
 
 
         # 拼装表头和数据
         final_finance_dict = OrderedDict()
+        row_name_list = row_name_list_main + row_name_list_dept + row_name_list_profit
         for key in finance_data_dict:
             new_dict = OrderedDict()
             data_list = finance_data_dict[key]
             for idx, row_name in enumerate(row_name_list):
                 new_dict[row_name] = data_list[idx]
             final_finance_dict[key] = new_dict
-        """
         file_path = os.path.join(self.data_path, "%s_%s" % (stock_id, stock_name))
         with open(file_path, "w") as f:
             output_str = json.dumps(final_finance_dict, ensure_ascii = False, indent = 2)
             f.write(output_str)
-        """
         return 0
 
 
@@ -367,7 +387,7 @@ class ASharesFinanceReportDigger:
 
         """
 
-        is_debug = True
+        is_debug = False
         logging.info("Now getting financial report")
 
         if is_debug:
