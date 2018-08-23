@@ -227,12 +227,11 @@ class ASharesFinanceReportDigger:
         return result
 
 
-    def _decode_table_data(self, soup, row_name_list):
+    def _decode_table_data(self, soup, row_name_list, result):
         """
         解析表格数据
         """
         logging.info("Begin to decode table data...")
-        result = OrderedDict()
         date_list = []
         info_list = []
         report_box = soup.find("div", class_ = "m_box finance i_hover_box", id = "finance")
@@ -328,14 +327,21 @@ class ASharesFinanceReportDigger:
         #print json.dumps(row_name_list, ensure_ascii = False, indent = 2)
 
         # 解析表格数据
-        finance_data_dict = self._decode_table_data(soup, row_name_list)
+        finance_data_dict = OrderedDict()
+        finance_data_dict = self._decode_table_data(soup, row_name_list, finance_data_dict)
         if len(finance_data_dict) == 0:
             return -1
 
 
         # 点击进入资产负债表
         self.d.find_element_by_class_name("icons_page").click()
-
+        time.sleep(5)
+        soup = BeautifulSoup(self.d.page_source, "html.parser")
+        # 解析表格的左栏
+        row_name_list = self._decode_left_head(soup)
+        if len(row_name_list) == 0:
+            return -1
+        print json.dumps(row_name_list, ensure_ascii = False, indent = 2)
 
 
         # 拼装表头和数据
