@@ -330,6 +330,7 @@ class ASharesFinanceReportDigger:
         #res = self._request_url(true_url, timeout = 1)
         soup = BeautifulSoup(self.d.page_source, "html.parser")
         #print soup.prettify()
+        print self.d.page_source
 
         # 解析表格的左栏
         row_name_list_main = self._decode_left_head(soup)
@@ -387,7 +388,7 @@ class ASharesFinanceReportDigger:
 
         """
 
-        is_debug = False
+        is_debug = True
         logging.info("Now getting financial report")
 
         if is_debug:
