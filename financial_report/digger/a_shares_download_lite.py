@@ -202,6 +202,12 @@ class ASharesFinanceReportDigger:
                 date = x_sheet.cell_value(1, col_idx).replace("-", "")
             except:
                 break
+            try:
+                int(date)
+            except:
+                logging.error("Date:%s is invalid!" % date)
+                col_idx += 1
+                continue
             now_col = x_sheet.col_values(col_idx)[2:]
             insuff_num = 0
             for idx, v in enumerate(now_col):
@@ -286,15 +292,15 @@ class ASharesFinanceReportDigger:
 
         """
 
-        is_debug = True
+        is_debug = False
         logging.info("Now getting financial report")
 
         if is_debug:
-            stock_id = "300253"
+            stock_id = "601211"
             self._decode_one_financial_page(stock_id, self.id_stockname_mapping[stock_id])
         else:
             for stock_id in self.id_stockname_mapping:
-                print "%s\t%s" % (stock_id, self.id_stockname_mapping[stock_id])
+                logging.info("%s\t%s" % (stock_id, self.id_stockname_mapping[stock_id]))
                 file_name = "%s_%s" % (stock_id, self.id_stockname_mapping[stock_id])
                 file_path = os.path.join(self.data_path, file_name)
                 if os.path.exists(file_path):
