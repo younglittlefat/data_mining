@@ -29,9 +29,8 @@ class FeatureSelector:
         """
         self.feature_mapping = {}
         with codecs.open(self.feature_conf, "r", "utf-8", "ignore") as f:
-            for line in f:
-                name, idx = line.strip().split(" ")
-                self.feature_mapping[name] = int(idx)
+            for idx, line in enumerate(f.readlines()):
+                self.feature_mapping[line.strip()] = idx
 
         print ""
         print json.dumps(sorted(self.feature_mapping.iteritems(),
@@ -71,34 +70,47 @@ class FeatureSelector:
         """
 
         """
-        begin_day = int(raw_info[0][0])
+        date_value_dict = raw_info[raw_info.keys()[0]]
+        date_value_list = sorted(date_value_dict.iteritems(), key = lambda x:int(x[0]))
+        begin_day = int(date_value_list[0][0])
         end_day = -1
-        for idx in range(len(raw_info)-1):
-            date_before = raw_info[idx][0]
-            date_after = raw_info[idx+1][0]
-            if not self._check_one_report_integrity(raw_info[idx][1]):
-                begin_day = int(raw_info[idx+1][0])
-                end_day = -1
-                continue
+        for idx in range(len(date_value_list)-1):
+            date_before = date_value_list[idx][0]
+            date_after = date_value_list[idx+1][0]
             try:
                 diff_days = self._get_diff_days(date_before, date_after)
             except:
-                begin_day = int(raw_info[idx+1][0])
+                begin_day = int(date_value_list[idx+1][0])
                 end_day = -1
                 continue
                 
             if diff_days < 100:
-                end_day = int(raw_info[idx+1][0])
+                end_day = int(date_value_list[idx+1][0])
             else:
-                begin_day = int(raw_info[idx+1][0])
+                begin_day = int(date_value_list[idx+1][0])
                 end_day = -1
 
         date_list = []
-        for date, _ in raw_info:
+        for date, _ in date_value_list:
             if int(date) >= begin_day and int(date) <= end_day:
                 date_list.append(int(date))
 
         return date_list
+
+
+    def _get_longest_subsequence_begin_with_march(self, report_date_list):
+        """
+        从时间序列中找出一个最长子区间，使得区间开头为3月份
+        """
+        begin_idx = 0
+        for idx, date in enumerate(report_date_list):
+            date = int(date)
+            month = (date - date/10000*10000) / 100
+            if month != 3:
+                begin_idx += 1
+            else:
+                break
+        return report_date_list[begin_idx:]
 
 
     def _get_stock_price_change(self, stock_id, begin_date, end_date):
@@ -185,7 +197,7 @@ class FeatureSelector:
         self.f_out.write(report_path.split("/")[-1] + " " + " ".join(map(str, feature_list)) + "\n")
 
 
-    def period_is_quarter(self, report_date_list, raw_info, raw_info_list, report_path):
+    def period_is_quarter(self, report_date_list, raw_info, report_path):
         """
         观察期为一个季度
         """
@@ -229,19 +241,24 @@ class FeatureSelector:
         print_feature = False
         with codecs.open(report_path, "r", "utf-8", "ignore") as f:
             raw_info = json.load(f)
-        raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
-        #print json.dumps(raw_info, ensure_ascii = False, indent = 1)
+        for key in raw_info.keys():
+            if key not in self.feature_mapping:
+                raw_info.pop(key)
+        #raw_info_list = sorted(raw_info.iteritems(), key = lambda x:int(x[0]))
+        #print json.dumps(raw_info.keys(), ensure_ascii = False, indent = 1)
 
         # 获取最长连续年报周期内的所有年报日期
-        report_date_list = self._get_longest_consecutive_period(raw_info_list)
-        print report_date_list
+        report_date_list = self._get_longest_consecutive_period(raw_info)
         if len(report_date_list) < 5:
             print "Report is incomplete! %s" % report_path
             return
 
-        #self.period_is_year(report_date_list, raw_info, raw_info_list, report_path)
-        self.period_is_quarter(report_date_list, raw_info, raw_info_list, report_path)
+        # 从时间序列中找出一个最长子区间，使得区间开头为3月份
+        report_date_list = self._get_longest_subsequence_begin_with_march(report_date_list)
+        print report_date_list
 
+        #self.period_is_year(report_date_list, raw_info, raw_info_list, report_path)
+        #self.period_is_quarter(report_date_list, raw_info, report_path)
 
 
     def get_valid_stock_id(self):
@@ -283,6 +300,7 @@ class FeatureSelector:
                 print "Filter ST company!"
                 continue
             self.process_one_company(report_path)
+            break
 
         self.f_out.close()
 
