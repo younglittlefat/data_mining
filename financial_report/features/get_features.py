@@ -28,6 +28,7 @@ class FeatureSelector:
 
         """
         self.feature_mapping = {}
+        self.feat_need_sep_by_quarter = {}
         with codecs.open(self.feature_conf, "r", "utf-8", "ignore") as f:
             for idx, line in enumerate(f.readlines()):
                 self.feature_mapping[line.strip()] = idx
@@ -36,6 +37,11 @@ class FeatureSelector:
         print json.dumps(sorted(self.feature_mapping.iteritems(),
             key = lambda x:x[1]), ensure_ascii = False)
         print ""
+
+        with codecs.open("../config/feat_need_seperate_by_quarter", "r", \
+            "utf-8", "ignore") as f:
+            for line in f:
+                self.feat_need_sep_by_quarter[line.strip()] = None
 
 
     def _get_diff_days(self, date1, date2):
@@ -111,6 +117,39 @@ class FeatureSelector:
             else:
                 break
         return report_date_list[begin_idx:]
+
+
+    def _truncate_report_by_date_list(self, raw_info, report_date_list):
+        """
+        报表中只留下有效的日期
+        """
+        origin_date_list = map(int, raw_info[raw_info.keys()[0]].keys())
+        truncate_date_set = {ele for ele in origin_date_list} - {ele for ele in report_date_list}
+        if len(truncate_date_set) > 0:
+            for date in truncate_date_set:
+                date = str(date)
+                for key in raw_info:
+                    raw_info[key].pop(date)
+
+        return raw_info
+
+
+
+    def _seperate_value_by_quarter(self, raw_info):
+        """
+        把一些每季度累加的值还原回当季度的值
+        """
+        for item in raw_info:
+            if item not in self.feat_need_sep_by_quarter:
+                continue
+            print item
+            temp_dict = {}
+            final_dict = {}
+            for date in raw_info[item]:
+                year = int(date)/10000
+                if year not in temp_dict:
+                    temp_dict[year] = []
+
 
 
     def _get_stock_price_change(self, stock_id, begin_date, end_date):
@@ -256,6 +295,9 @@ class FeatureSelector:
         # 从时间序列中找出一个最长子区间，使得区间开头为3月份
         report_date_list = self._get_longest_subsequence_begin_with_march(report_date_list)
         print report_date_list
+
+        raw_info = self._truncate_report_by_date_list(raw_info, report_date_list)
+
 
         #self.period_is_year(report_date_list, raw_info, raw_info_list, report_path)
         #self.period_is_quarter(report_date_list, raw_info, report_path)
