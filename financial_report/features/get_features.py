@@ -13,12 +13,13 @@ sys.setdefaultencoding("utf-8")
 
 class FeatureSelector:
 
-    def __init__(self, reports_dir, feature_conf, stock_price_dir, feature_output):
+    def __init__(self, reports_dir, conf_dir, stock_price_dir, feature_output):
         self.reports_dir = reports_dir
-        self.feature_conf = feature_conf
+        self.conf_dir = conf_dir
         self.stock_price_dir = stock_price_dir
         self.feature_output = feature_output
-        self.f_out = open(self.feature_output, "w")
+        self.f_train_out = open(os.path.join(self.feature_output, "train.txt"), "w")
+        self.f_test_out = open(os.path.join(self.feature_output, "test.txt"), "w")
         # read feature conf
         self._read_feature_conf()
 
@@ -29,7 +30,8 @@ class FeatureSelector:
         """
         self.feature_mapping = {}
         self.feat_need_sep_by_quarter = {}
-        with codecs.open(self.feature_conf, "r", "utf-8", "ignore") as f:
+        feature_conf_path = os.path.join(self.conf_dir, "feature_conf")
+        with codecs.open(feature_conf_path, "r", "utf-8", "ignore") as f:
             for idx, line in enumerate(f.readlines()):
                 self.feature_mapping[line.strip()] = idx
 
@@ -38,8 +40,8 @@ class FeatureSelector:
             key = lambda x:x[1]), ensure_ascii = False)
         print ""
 
-        with codecs.open("../config/feat_need_seperate_by_quarter", "r", \
-            "utf-8", "ignore") as f:
+        with codecs.open(os.path.join(self.conf_dir, "feat_need_seperate_by_quarter")
+            , "r", "utf-8", "ignore") as f:
             for line in f:
                 self.feat_need_sep_by_quarter[line.strip()] = None
 
@@ -142,13 +144,26 @@ class FeatureSelector:
         for item in raw_info:
             if item not in self.feat_need_sep_by_quarter:
                 continue
-            print item
+            #print item
             temp_dict = {}
             final_dict = {}
             for date in raw_info[item]:
                 year = int(date)/10000
                 if year not in temp_dict:
                     temp_dict[year] = []
+                temp_dict[year].append([date, raw_info[item][date]])
+
+            for year in temp_dict:
+                now_list = temp_dict[year]
+                now_list.sort(key = lambda x:int(x[0]))
+                #print "\nbefore:"
+                #print now_list
+                for i in range(len(now_list)-1, 1, -1):
+                    now_list[i][1] -= now_list[i-1][1]
+                #print "\nafter:"
+                #print now_list
+
+        return raw_info
 
 
 
@@ -156,7 +171,13 @@ class FeatureSelector:
         """
         获取某公司特定时间段的股票涨跌幅
         """
+        price_change = None
+        company_price = None
+        now_price = None
+
         # 股价区间均推迟1个月
+        begin_date = int(begin_date)
+        end_date = int(end_date)
         before = datetime(begin_date/10000, (begin_date-begin_date/10000*10000)/100,
             begin_date-begin_date/100*100)
         after = datetime(end_date/10000, (end_date-end_date/10000*10000)/100,
@@ -169,92 +190,105 @@ class FeatureSelector:
         #print json.dumps(map(lambda x:x.decode("gbk"), info_list[0]), ensure_ascii = False)
 
         # 找到开盘的一天
-        for i in range(8):
-            days_interval = timedelta(days = 30+i)
+        for i in range(20):
+            days_interval = timedelta(days = 25+i)
             delay_before = (before + days_interval).strftime("%Y-%m-%d")
-            if delay_before in self.date_price_dict:
+            if delay_before in self.date_price_dict and \
+                str(self.date_price_dict[delay_before][0]) != "0.0":
                 break
-        for i in range(8):
-            days_interval = timedelta(days = 30+i)
+        for i in range(20):
+            days_interval = timedelta(days = 25+i)
             delay_after = (after + days_interval).strftime("%Y-%m-%d")
-            if delay_after in self.date_price_dict:
+            if delay_after in self.date_price_dict and \
+                str(self.date_price_dict[delay_after][0]) != "0.0":
                 break
-        for i in range(8):
+        for i in range(20):
             days_interval = timedelta(days = i)
             valid_begin_date = (before + days_interval).strftime("%Y-%m-%d")
-            if valid_begin_date in self.date_price_dict:
+            if valid_begin_date in self.date_price_dict and \
+                str(self.date_price_dict[valid_begin_date][0]) != "0.0":
                 break
 
         # 
         if delay_before not in self.date_price_dict or \
             delay_after not in self.date_price_dict or \
             valid_begin_date not in self.date_price_dict:
-            return None, None
+            print "delay_before:%s, delay_after:%s, valid_begin_date:%s" % \
+                (delay_before, delay_after, valid_begin_date)
+            return price_change, company_price, now_price
 
-        # 获取当天股价
+        # 获取股价变化区间的开头及结尾的股价
         begin_price = self.date_price_dict[delay_before][0]
         end_price = self.date_price_dict[delay_after][0]
+        now_price = begin_price
         #print delay_before, begin_price
         #print delay_after, end_price
         if str(begin_price) == "0.0" or str(end_price) == "0.0":
-            return None, None
+            print "b_day:%s, e_day:%s, begin_price:%s, end_price:%s" % \
+                (delay_before, delay_after, begin_price, end_price)
+            return price_change, company_price, now_price
 
         # 获取总市值
         company_price = self.date_price_dict[valid_begin_date][1]
         if str(company_price) == "0.0":
-            return None, None
-
-        return end_price/begin_price - 1, company_price
-
-
-
-    def period_is_year(self, report_date_list, raw_info, raw_info_list, report_path):
-        """
-        观察期为1年
-        """
-        print_feature = False
-        feature_list = [None for i in range(4*len(self.feature_mapping) + 1)]
-        for idx, date in enumerate(report_date_list[-4:]):
-            for feat_name in self.feature_mapping:
-                if feat_name in raw_info[str(date)]:
-                    if print_feature:
-                        print "date=%s, feat=%s, value=%s" % \
-                            (date, feat_name, raw_info[str(date)][feat_name])
-                    feat_idx = idx*len(self.feature_mapping) + self.feature_mapping[feat_name]
-                    feat_value = raw_info[str(date)][feat_name]
-                    feature_list[feat_idx] = feat_value
-
-        # 获取对应时间段的股价涨跌幅
-        stock_id = report_path.split("/")[-1].split("_")[0]
-        price_change, company_price = self._get_stock_price_change(stock_id, report_date_list[-4:][0], report_date_list[-4:][-1])
-        if not price_change:
-            return None
-        feature_list[-1] = price_change
-
-        if print_feature:
-            print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
-        self.f_out.write(report_path.split("/")[-1] + " " + " ".join(map(str, feature_list)) + "\n")
+            return price_change, company_price, now_price
+        
+        price_change = end_price/begin_price - 1
+        return price_change, company_price, now_price
 
 
-    def period_is_quarter(self, report_date_list, raw_info, report_path):
+
+    def get_report_feature(self, raw_info):
         """
         观察期为一个季度
         """
-        print_feature = False
-        for idx, date in enumerate(report_date_list[4:-1]):
-            feature_list = [None for i in range(len(self.feature_mapping) + 2)]
-            for feat_name in self.feature_mapping:
-                if feat_name in raw_info[str(date)]:
-                    if print_feature:
-                        print "date=%s, feat=%s, value=%s" % \
-                            (date, feat_name, raw_info[str(date)][feat_name])
-                    feat_idx = self.feature_mapping[feat_name] 
-                    feat_value = raw_info[str(date)][feat_name]
-                    feature_list[feat_idx] = feat_value
+        date_feature_dict = {}
+        for feat_name in raw_info:
+            if feat_name not in self.feature_mapping:
+                continue
+            report_date_list = raw_info[feat_name].keys()
+            report_date_list.sort(key = lambda x:int(x))
+            for idx, date in enumerate(report_date_list):
+                # 获取特定时间点的特征
+                if date not in date_feature_dict:
+                    feature_list = [None for i in range(len(self.feature_mapping) + 4)]
+                    date_feature_dict[date] = feature_list
+                else:
+                    feature_list = date_feature_dict[date]
+                # 填充特征
+                feat_value = raw_info[feat_name][date]
+                feat_idx = self.feature_mapping[feat_name] 
+                feature_list[feat_idx] = feat_value
 
-            # 获取对应时间段的股价涨跌幅
+                # 获取季度特征
+                date = int(date)
+                month = (date-date/10000*10000) / 100
+                if month == 3:
+                    feature_list[-4] = 1
+                elif month == 6:
+                    feature_list[-4] = 2
+                elif month == 9:
+                    feature_list[-4] = 3
+                elif month == 12:
+                    feature_list[-4] = 4
+        
+        return date_feature_dict
+
+
+    def get_stock_price_feature(self, date_feature_dict, report_path):
+        """
+
+        """
+        print_feature = True
+        report_date_list = date_feature_dict.keys()
+        report_date_list.sort(key = lambda x:int(x))
+        if print_feature:
+            print report_date_list
+        for idx, date in enumerate(report_date_list[:-1]):
+            feature_list = date_feature_dict[date]
+            # 获取股价特征
             stock_id = report_path.split("/")[-1].split("_")[0]
-            price_change, company_price= self._get_stock_price_change(stock_id, report_date_list[idx], report_date_list[idx+1])
+            price_change, company_price, now_price = self._get_stock_price_change(stock_id, report_date_list[idx], report_date_list[idx+1])
             if not price_change:
                 print "No price change!"
                 continue
@@ -263,14 +297,26 @@ class FeatureSelector:
                 continue
             feature_list[-1] = price_change
             feature_list[-2] = company_price
-    
+            feature_list[-3] = now_price
+
+        if print_feature:
+            pass
+            #print "date=%s, feat=%s, value=%s" % \
+            #    (date, feat_name, raw_info[feat_name][str(date)])
+   
+        date_list = report_date_list[:-1]
+        for idx, date in enumerate(date_list):
+            feature_list = date_feature_dict[date]
+            if feature_list[-1] is None:
+                continue
             if print_feature:
                 print report_path.split("/")[-1] + " " + " ".join(map(str, feature_list))
-            self.f_out.write(report_path.split("/")[-1] + " " + \
-                str(report_date_list[idx]) + " " + str(report_date_list[idx+1]) + " " + \
-                " ".join(map(str, feature_list)) + "\n")
-
-
+            if idx != len(date_list) -1:
+                self.f_train_out.write(report_path.split("/")[-1] + " " + \
+                    str(date) + " " + " ".join(map(str, feature_list)) + "\n")
+            else:
+                self.f_test_out.write(report_path.split("/")[-1] + " " + \
+                    str(date) + " " + " ".join(map(str, feature_list)) + "\n")
 
 
     def process_one_company(self, report_path):
@@ -280,6 +326,11 @@ class FeatureSelector:
         print_feature = False
         with codecs.open(report_path, "r", "utf-8", "ignore") as f:
             raw_info = json.load(f)
+
+        if len(raw_info[raw_info.keys()[0]]) < 4:
+            print "Report is incomplete! %s" % report_path
+            return
+
         for key in raw_info.keys():
             if key not in self.feature_mapping:
                 raw_info.pop(key)
@@ -294,14 +345,17 @@ class FeatureSelector:
 
         # 从时间序列中找出一个最长子区间，使得区间开头为3月份
         report_date_list = self._get_longest_subsequence_begin_with_march(report_date_list)
-        print report_date_list
 
         raw_info = self._truncate_report_by_date_list(raw_info, report_date_list)
 
+        raw_info = self._seperate_value_by_quarter(raw_info)
 
-        #self.period_is_year(report_date_list, raw_info, raw_info_list, report_path)
-        #self.period_is_quarter(report_date_list, raw_info, report_path)
+        try:
+            date_feature_dict = self.get_report_feature(raw_info)
 
+            self.get_stock_price_feature(date_feature_dict, report_path)
+        except Exception as e:
+            print e
 
     def get_valid_stock_id(self):
         """
@@ -336,15 +390,15 @@ class FeatureSelector:
         reports_path = map(lambda x:os.path.join(self.reports_dir, x), 
             os.listdir(self.reports_dir))
 
-        for report_path in reports_path:
+        for idx, report_path in enumerate(reports_path):
             print "Now processing %s" % report_path
             if u"ST" in report_path:
                 print "Filter ST company!"
                 continue
             self.process_one_company(report_path)
-            break
 
-        self.f_out.close()
+        self.f_train_out.close()
+        self.f_test_out.close()
 
 
 if __name__ == "__main__":
