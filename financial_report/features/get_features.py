@@ -279,7 +279,7 @@ class FeatureSelector:
         """
 
         """
-        print_feature = True
+        print_feature = False
         report_date_list = date_feature_dict.keys()
         report_date_list.sort(key = lambda x:int(x))
         if print_feature:

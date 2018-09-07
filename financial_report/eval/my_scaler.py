@@ -19,7 +19,7 @@ class MinMaxScaler:
         print_info = False
         def _value_scale_func(value, min_val, max_val):
             if value == "None":
-                return float(-1)
+                return float(2.0)
             else:
                 v = float(value)
                 return (v - min_val) / (max_val - min_val)
@@ -53,7 +53,7 @@ class MinMaxScaler:
             new_col_vector.append(new_col)
 
         # 还原为行向量并返回
-        return np.array(new_col_vector).T
+        return np.array(new_col_vector, dtype = np.float).T
 
 
     def transform(self, data_list):
@@ -89,7 +89,7 @@ class MinMaxScaler:
             new_col_vector.append(new_col)
 
         # 还原为行向量并返回
-        return np.array(new_col_vector).T
+        return np.array(new_col_vector, dtype = np.float).T
 
 if __name__ == "__main__":
     pass
