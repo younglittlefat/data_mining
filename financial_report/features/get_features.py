@@ -144,7 +144,6 @@ class FeatureSelector:
         for item in raw_info:
             if item not in self.feat_need_sep_by_quarter:
                 continue
-            #print item
             temp_dict = {}
             final_dict = {}
             for date in raw_info[item]:
@@ -159,7 +158,8 @@ class FeatureSelector:
                 #print "\nbefore:"
                 #print now_list
                 for i in range(len(now_list)-1, 1, -1):
-                    now_list[i][1] -= now_list[i-1][1]
+                    if now_list[i][1] and now_list[i-1][1]:
+                        now_list[i][1] -= now_list[i-1][1]
                 #print "\nafter:"
                 #print now_list
 

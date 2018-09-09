@@ -50,6 +50,45 @@ class DataAnalyser:
         print "Length of raw_test:%d" % (len(self.raw_test_list))
 
 
+    def feature_cross(self):
+        """
+
+        """
+        def sub_process(now_list):
+            for feat in now_list:
+                earning_per_share = feat[0]
+                net_asset_per_share = feat[2]
+                stock_price = feat[-4]
+                net_asset = feat[22]
+                net_earning = feat[33]
+                total_debt = feat[19]
+                # 静态市盈率
+                if earning_per_share != "None" and stock_price != "None"and abs(float(earning_per_share) > 1e-7):
+                    feat.append(float(stock_price)/float(earning_per_share))
+                else:
+                    feat.append("None")
+                # 当期净资产收益率
+                if net_asset != "None" and net_earning != "None" and abs(float(net_asset) > 1e-7):
+                    feat.append(float(net_earning)/float(net_asset))
+                else:
+                    feat.append("None")
+                # 市净率
+                if stock_price != "None" and net_asset_per_share != "None" and abs(float(net_asset_per_share) > 1e-7):
+                    feat.append(float(stock_price)/float(net_asset_per_share))
+                else:
+                    feat.append("None")
+                # 当期总资产收益率
+                if net_earning != "None" and net_asset != "None" and total_debt != "None" and abs(float(net_asset)+float(total_debt) > 1e-7):
+                    feat.append(float(net_earning) / (float(net_asset)+float(total_debt)))
+                else:
+                    feat.append("None")
+
+
+        sub_process(self.raw_train_list)
+        sub_process(self.raw_test_list)
+
+
+
     def normalization(self):
         """
         对数据做归一化
@@ -74,6 +113,10 @@ class DataAnalyser:
         feature_name_list.append(u"月份")
         feature_name_list.append(u"当前股价")
         feature_name_list.append(u"公司市值")
+        feature_name_list.append(u"静态市盈率")
+        feature_name_list.append(u"当期净资产收益率")
+        feature_name_list.append(u"市净率")
+        feature_name_list.append(u"当期总资产收益率")
 
         return feature_name_list
 
@@ -85,14 +128,7 @@ class DataAnalyser:
         feature_name_list = self.get_feature_conf()
         print len(feature_name_list)
 
-#        col_vector = []
-#        for idx in range(len(self.raw_train_list[0]) - 1):
-#            now_col = [float(row[idx]) if row[idx] != "None" else 0.0 for row in self.raw_train_list]
-#            col_vector.append(now_col)
-#
-#        col_vector = np.array(col_vector)
-#        std_vector = np.std(col_vector, axis = 1, ddof = 1)
-#        print std_vector
+        self.feature_cross()
 
         norm_train, norm_test = self.normalization()
         train_label = np.array(self.raw_train_label)
