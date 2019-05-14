@@ -13,7 +13,7 @@ from collections import OrderedDict
 import requests
 import xlrd
 from bs4 import BeautifulSoup
-from selenium import webdriver
+#from selenium import webdriver
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -27,7 +27,7 @@ logging.getLogger("connectionpool").setLevel(logging.WARNING)
 class ASharesFinanceReportDigger:
 
 
-    def __init__(self, data_path, config_path, mapping_file_path = None):
+    def __init__(self, data_dir, stock_list_dir, config_path):
         self.root_url = None
         self.user_agent = None
         self.host = None
@@ -36,23 +36,19 @@ class ASharesFinanceReportDigger:
         self.stock_name_filter_set = set(u"1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM")
         self.id_stockname_mapping = {}
 
-        self.data_path = data_path
+        self.data_dir = data_dir
+        self.stock_list_dir = stock_list_dir
         self.config_path = config_path
-        self.mapping_file_path = mapping_file_path
-        self.blacklist = "../config/china_shares_blacklist"
+        #self.blacklist = "config/china_shares_blacklist"
+
+        self.latest_insuff_report_date = None
 
         # 创建当天财报目录
-        if not os.path.exists(os.path.join(self.data_path, self.now_month)):
-            os.mkdir(os.path.join(self.data_path, self.now_month))
-        self.data_path = os.path.join(self.data_path, self.now_month)
-
-        # selenium设置
-        #self.d = webdriver.Chrome()
-        #self.d.set_page_load_timeout(5)
-        #self.d.set_script_timeout(5)
+        if not os.path.exists(os.path.join(self.data_dir, self.now_month)):
+            os.mkdir(os.path.join(self.data_dir, self.now_month))
+        self.data_dir = os.path.join(self.data_dir, self.now_month)
 
         self.load_config()
-        self.load_stock_id_mapping()
     
 
     def load_config(self):
@@ -65,7 +61,6 @@ class ASharesFinanceReportDigger:
             self.stock_root_url = j["stock_root_url"]
             self.financial_root_url = j["financial_root_url"]
             self.user_agent = j["User-Agent"]
-            self.stock_id_filepath = j["stock_id_filepath"]
 
         if self.user_agent and self.host:
             self.headers["User-Agent"] = self.user_agent
@@ -76,18 +71,20 @@ class ASharesFinanceReportDigger:
         """
 
         """
-        if not self.mapping_file_path:
-            return
+        stock_list_path = os.path.join(self.stock_list_dir, self.now_month)
+        if not os.path.exists(stock_list_path):
+            logging.warn("Stock name-id mapping file doesn't exist, now downloading...")
+            self._get_all_stock_id(stock_list_path)
 
-        with codecs.open(self.blacklist, "r", "utf-8", "ignore") as f:
-            blacklist_dict = {line.strip().split("_")[0] for line in f.readlines()}
+        #with codecs.open(self.blacklist, "r", "utf-8", "ignore") as f:
+        #    blacklist_dict = {line.strip().split("_")[0] for line in f.readlines()}
 
         self.id_stockname_mapping = {}
-        with codecs.open(self.mapping_file_path, "r", "utf-8", "ignore") as f:
+        with codecs.open(stock_list_path, "r", "utf-8", "ignore") as f:
             for line in f:
                 temp = line.strip().split("\t")
-                if temp[1] in blacklist_dict:
-                    continue
+                #if temp[1] in blacklist_dict:
+                #    continue
                 self.id_stockname_mapping[temp[1]] = temp[0]
 
 
@@ -104,9 +101,10 @@ class ASharesFinanceReportDigger:
                 else:
                     res = requests.get(url, timeout = timeout)
                 success = True
-            except:
+            except Exception as e:
                 retry_times += 1
                 logging.warn("Error in decoding image url:%s, now retry times:%d" % (url, retry_times))
+                logging.warn(e)
 
         if success:
             return res
@@ -136,7 +134,7 @@ class ASharesFinanceReportDigger:
 
 
 
-    def get_all_stock_id(self):
+    def _get_all_stock_id(self, stock_list_path):
         """
         获取所有股票代码
         """
@@ -153,7 +151,7 @@ class ASharesFinanceReportDigger:
             exit(1)
         li_list = div_quotesearch.find_all("li")
 
-        f_w = open(self.stock_id_filepath, "w")
+        f_w = open(stock_list_path, "w")
         for li in li_list:
             a = li.find("a")
             raw_txt = a.string
@@ -172,17 +170,25 @@ class ASharesFinanceReportDigger:
                 continue
             if u"ST" in stock_name:
                 continue
+            if u"B股" in stock_name:
+                continue
+            if u"港股" in stock_name:
+                continue 
             self.id_stockname_mapping[stock_id] = stock_name
             f_w.write("%s\t%s\n" % (stock_name, stock_id))
         f_w.close()
         logging.info("Done for getting stock ID.")
 
 
-    def _decode_one_xls_file(self, file_name, item_date_dict):
+    def _decode_one_xls_file(self, file_name, item_date_dict, stock_id, stock_name):
         """
 
         """
-        x = xlrd.open_workbook(file_name)
+        try:
+            x = xlrd.open_workbook(file_name)
+        except Exception as e:
+            logging.error("Can not open %s_%s %s" % (stock_id, stock_name, file_name))
+            return
         x_sheet = x.sheet_by_index(0)
 
         # get title
@@ -220,7 +226,8 @@ class ASharesFinanceReportDigger:
                     if "%" in v:
                         true_value = float(v.replace("%", ""))/100.0
                     else:
-                        logging.error("Error in decode cell! ")
+                        pass
+                        #logging.error("Error in decode cell! v=%s" % v)
                 if true_value is None:
                     insuff_num += 1
                 # 获取距离现在最近的，不完整的年报的日期
@@ -251,7 +258,7 @@ class ASharesFinanceReportDigger:
         res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
         res.stdout.readlines()
         # read main report
-        self._decode_one_xls_file("main.xls", item_date_dict)
+        self._decode_one_xls_file("main.xls", item_date_dict, stock_id, stock_name)
         os.remove("main.xls")
 
         # download debt report
@@ -259,7 +266,7 @@ class ASharesFinanceReportDigger:
         res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
         res.stdout.readlines()
         # read debt report
-        self._decode_one_xls_file("debt.xls", item_date_dict)
+        self._decode_one_xls_file("debt.xls", item_date_dict, stock_id, stock_name)
         os.remove("debt.xls")
 
         # download benefit report
@@ -267,7 +274,7 @@ class ASharesFinanceReportDigger:
         res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
         res.stdout.readlines()
         # read benefit report
-        self._decode_one_xls_file("benefit.xls", item_date_dict)
+        self._decode_one_xls_file("benefit.xls", item_date_dict, stock_id, stock_name)
         os.remove("benefit.xls")
 
 
@@ -279,10 +286,11 @@ class ASharesFinanceReportDigger:
                         item_date_dict[item_name].pop(date)
 
 
-        file_path = os.path.join(self.data_path, "%s_%s" % (stock_id, stock_name))
-        with open(file_path, "w") as f:
-            out_str = json.dumps(item_date_dict, ensure_ascii = False, indent = 1)
-            f.write(out_str)
+        if len(item_date_dict) > 0:
+            file_path = os.path.join(self.data_dir, "%s_%s" % (stock_id, stock_name))
+            with open(file_path, "w") as f:
+                out_str = json.dumps(item_date_dict, ensure_ascii = False, indent = 1)
+                f.write(out_str)
         return 0
 
 
@@ -302,7 +310,7 @@ class ASharesFinanceReportDigger:
             for stock_id in self.id_stockname_mapping:
                 logging.info("%s\t%s" % (stock_id, self.id_stockname_mapping[stock_id]))
                 file_name = "%s_%s" % (stock_id, self.id_stockname_mapping[stock_id])
-                file_path = os.path.join(self.data_path, file_name)
+                file_path = os.path.join(self.data_dir, file_name)
                 if os.path.exists(file_path):
                     logging.info("%s exists! Now continue..." % file_name)
                     continue
@@ -313,8 +321,10 @@ class ASharesFinanceReportDigger:
 
 
 if __name__ == "__main__":
-    data_path = sys.argv[1]
-    config_path = sys.argv[2]
-    mapping_file = sys.argv[3]
-    a = ASharesFinanceReportDigger(data_path, config_path, mapping_file)
+    data_dir = sys.argv[1]
+    stock_list_dir = sys.argv[2]
+    config_path = sys.argv[3]
+    a = ASharesFinanceReportDigger(data_dir, stock_list_dir, config_path)
+    a.load_stock_id_mapping()
+    #a.get_all_stock_id()
     a.get_financial_report()
