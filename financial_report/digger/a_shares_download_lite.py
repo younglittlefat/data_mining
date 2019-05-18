@@ -13,7 +13,8 @@ from collections import OrderedDict
 import requests
 import xlrd
 from bs4 import BeautifulSoup
-#from selenium import webdriver
+
+from proxy.proxy_factory import ProxyFactory
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -47,6 +48,9 @@ class ASharesFinanceReportDigger:
         if not os.path.exists(os.path.join(self.data_dir, self.now_month)):
             os.mkdir(os.path.join(self.data_dir, self.now_month))
         self.data_dir = os.path.join(self.data_dir, self.now_month)
+
+        # 代理factory
+        self.proxy_factory = ProxyFactory()
 
         self.load_config()
     
@@ -88,6 +92,104 @@ class ASharesFinanceReportDigger:
                 self.id_stockname_mapping[temp[1]] = temp[0]
 
 
+    def _request_url_using_proxy(self, url, timeout = 5):
+        """
+        use requests module to request a url, return a response
+        """
+        success = False
+        retry_times = 0
+        while success == False and retry_times < 5:
+            now_ip_info = self.proxy_factory.get_one_ip()
+            try:
+                # get proxy ip
+                proxy = {}
+                proxy["http"] = "http://%s:%s" % (now_ip_info["ip"], now_ip_info["port"])
+                logging.info("Now using proxy=%s" % proxy["http"])
+                if len(self.headers) > 0:
+                    res = requests.get(url, headers = self.headers, timeout = timeout, proxies = proxy)
+                else:
+                    res = requests.get(url, timeout = timeout, proxies = proxy)
+                res.raise_for_status()
+                success = True
+            except Exception as e:
+                retry_times += 1
+                now_ip_info["fail_times"] += 1
+                logging.warn("Error in decoding image url:%s, ip=%s, fail times of ip=%s, now retry times:%d" % \
+                    (url, now_ip_info["ip"], now_ip_info["fail_times"], retry_times))
+                logging.warn(e)
+
+        if success:
+            return res
+        else:
+            return None
+
+
+    def _wget_url_using_proxy(self, url, file_name, timeout = 10):
+        """
+        use wget to request a url, return a response
+        """
+        success = False
+        retry_times = 0
+        while success == False and retry_times < 3:
+            now_ip_info = self.proxy_factory.get_one_ip()
+            try:
+                # get proxy ip
+                proxy = "http_proxy=http://%s:%s" % (now_ip_info["ip"], now_ip_info["port"])
+                command = "wget -O %s \"%s\" -e \"%s\" -T %s" % (file_name, url, proxy, timeout)
+                res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+                res.stdout.readlines()
+                file_is_valid = True
+                try:
+                    x = xlrd.open_workbook(file_name)
+                except:
+                    file_is_valid = False
+                if file_is_valid:
+                    logging.info("Download %s done, now ip=%s" % (file_name, json.dumps(now_ip_info)))
+                    success = True
+                else:
+                    logging.warn("Download failed, file_name = %s, now retrying" % (file_name))
+                    now_ip_info["fail_times"] += 1
+                    retry_times += 1
+            except Exception as e:
+                retry_times += 1
+                now_ip_info["fail_times"] += 1
+                logging.warn("Error in decoding image url:%s, ip=%s, fail times of ip=%s, now retry times:%d" % \
+                    (url, now_ip_info["ip"], now_ip_info["fail_times"], retry_times))
+                logging.warn(e)
+
+        if success:
+            return res
+        else:
+            return None
+
+    def _wget_url(self, url, file_name):
+        """
+        use requests module to request a url, return a response
+        """
+        success = False
+        retry_times = 0
+        while success == False and retry_times < 3:
+            try:
+                command = "wget -O %s \"%s\"" % (file_name, url)
+                res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+                res.stdout.readlines()
+                if os.path.exists(file_name) and os.path.getsize(file_name) > 5000:
+                    success = True
+                else:
+                    os.remove(file_name)
+                    retry_times += 1
+            except Exception as e:
+                retry_times += 1
+                logging.warn("Error in decoding image url:%s, now retry times:%d" % (url, retry_times))
+                os.remove(file_name)
+                logging.warn(e)
+
+        if success:
+            return res
+        else:
+            return None
+
+
     def _request_url(self, url, timeout = 5):
         """
         use requests module to request a url, return a response
@@ -97,7 +199,7 @@ class ASharesFinanceReportDigger:
         while success == False and retry_times < 5:
             try:
                 if len(self.headers) > 0:
-                    res = requests.get(url, headers = self.headers, timeout = timeout)
+                    res = requests.get(url, headers = self.headers, timeout = timeout, stream=True)
                 else:
                     res = requests.get(url, timeout = timeout)
                 success = True
@@ -111,27 +213,11 @@ class ASharesFinanceReportDigger:
         else:
             return None
 
-
-    def _request_url_with_selenium(self, url):
-        """
-        如果访问超时则重试最多5次
-        """
-        success = False
-        retry_times = 0
-        while success == False and retry_times < 5:
-            try:
-                self.d.get(url)
-                result = self.d.page_source
-                success = True
-            except:
-                retry_times += 1
-                logging.warn("Error in decoding image url:%s, now retry times:%d" % (url, retry_times))
-
-        if success:
-            return result
-        else:
-            return None
-
+    def _save_file(self, res, file_name):
+        f = open(file_name, "wb")
+        for chunk in res.iter_content(100000):
+            f.write(chunk)
+        f.close()
 
 
     def _get_all_stock_id(self, stock_list_path):
@@ -160,6 +246,9 @@ class ASharesFinanceReportDigger:
                 stock_name, stock_id = raw_txt.split(" ")
             except:
                 continue
+            if stock_id.startswith("1") or stock_id.startswith("2") or \
+                stock_id.startswith("5"):
+                continue
             name_set = set(stock_name)
             # some filter
             if len(name_set - self.stock_name_filter_set) == 0:
@@ -174,6 +263,8 @@ class ASharesFinanceReportDigger:
                 continue
             if u"港股" in stock_name:
                 continue 
+            if stock_name.endswith("1"):
+                continue
             self.id_stockname_mapping[stock_id] = stock_name
             f_w.write("%s\t%s\n" % (stock_name, stock_id))
         f_w.close()
@@ -254,25 +345,21 @@ class ASharesFinanceReportDigger:
         benefit_url = "http://basic.10jqka.com.cn/api/stock/export.php?export=benefit&type=report&code=%s" % stock_id
 
         # download main report
-        command = "wget -O %s \"%s\"" % ("main.xls", main_url)
-        res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-        res.stdout.readlines()
+        res = self._wget_url_using_proxy(main_url, "main.xls")
+        #res = self._request_url(main_url, "main.xls")
         # read main report
         self._decode_one_xls_file("main.xls", item_date_dict, stock_id, stock_name)
         os.remove("main.xls")
 
         # download debt report
-        command = "wget -O %s \"%s\"" % ("debt.xls", debt_url)
-        res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-        res.stdout.readlines()
+        res = self._wget_url_using_proxy(debt_url, "debt.xls")
         # read debt report
         self._decode_one_xls_file("debt.xls", item_date_dict, stock_id, stock_name)
         os.remove("debt.xls")
 
         # download benefit report
-        command = "wget -O %s \"%s\"" % ("benefit.xls", benefit_url)
-        res = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-        res.stdout.readlines()
+        #res = self._wget_url(benefit_url, "benefit.xls")
+        res = self._wget_url_using_proxy(benefit_url, "benefit.xls")
         # read benefit report
         self._decode_one_xls_file("benefit.xls", item_date_dict, stock_id, stock_name)
         os.remove("benefit.xls")
