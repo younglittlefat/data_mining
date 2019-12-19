@@ -327,6 +327,17 @@ class FeatureSelector:
         with codecs.open(report_path, "r", "utf-8", "ignore") as f:
             raw_info = json.load(f)
 
+        """
+        raw_info structure:
+        {
+            "基本每股收益": {
+                "20190331": 0.38,
+                ......
+            }
+            ......
+        }
+        """
+        # 如果年报数量小于4，不满一年，剔除掉这样的公司
         if len(raw_info[raw_info.keys()[0]]) < 4:
             print "Report is incomplete! %s" % report_path
             return

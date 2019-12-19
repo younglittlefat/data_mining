@@ -2,8 +2,13 @@
 import sys
 import os
 import requests
+import logging
 
 from lxml import etree
+
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("connectionpool").setLevel(logging.WARNING)
 
 
 class Download_HistoryStock(object):
@@ -53,7 +58,7 @@ class Download_HistoryStock(object):
         for chunk in data.iter_content(chunk_size=10000):
             if chunk:
                 f.write(chunk)
-        print '股票---',self.code,'历史数据正在下载'
+        print '股票---',self.code,'历史数据下载完毕'
     
     def run(self):
         try:
