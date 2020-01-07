@@ -413,5 +413,4 @@ if __name__ == "__main__":
     config_path = sys.argv[3]
     a = ASharesFinanceReportDigger(data_dir, stock_list_dir, config_path)
     a.load_stock_id_mapping()
-    #a.get_all_stock_id()
     a.get_financial_report()

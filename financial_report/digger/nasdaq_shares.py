@@ -305,8 +305,9 @@ class AmericanSharesFinanceReportDigger:
         logging.info("Now getting financial report")
 
         if is_debug:
-            stock_id = "300253"
-            self._decode_one_financial_page(stock_id, self.id_stockname_mapping[stock_id])
+            stock_id = "GOOG"
+            #self._decode_one_financial_page(stock_id, self.id_stockname_mapping[stock_id])
+            self._decode_one_financial_page(stock_id)
         else:
             for stock_id in self.id_stockname_mapping:
                 print "%s\t%s" % (stock_id, self.id_stockname_mapping[stock_id])

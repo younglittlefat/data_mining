@@ -3,6 +3,7 @@ import sys
 import os
 import requests
 import logging
+import time
 
 from lxml import etree
 
@@ -58,16 +59,24 @@ class Download_HistoryStock(object):
         for chunk in data.iter_content(chunk_size=10000):
             if chunk:
                 f.write(chunk)
-        print '股票---',self.code,'历史数据下载完毕'
+        logging.info('股票---%s历史数据下载完毕' % self.code)
     
     def run(self):
+        if len(self.code) == 0:
+            logging.error("stock_id=%s len is 0" % self.code)
+            return
+        if self.code[0] != "0" and self.code[0] != "3" and self.code[0] != "6":
+            logging.error("Invalid stock_id=%s" % self.code)
+            return
+
         try:
             html = self.parse_url()
             start_date,end_date = self.get_date(html)
             self.download(start_date, end_date)
         except Exception as e:
-            print e
+            logging.error("error in downloading stock price of %s, err=%s" % (self.code, e))
 
+        time.sleep(15)
 
 if __name__ == "__main__":
     output_path = "./"
